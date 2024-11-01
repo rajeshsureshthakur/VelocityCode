@@ -79,13 +79,16 @@ public class CSVMerger {
     // Calculate deviation based on column type
     private static String calculateDeviation(String value1, String value2, boolean isAPITPH) {
         try {
-            double v1 = parseNumber(value1);
-            double v2 = parseNumber(value2);
-            double deviation = v2 - v1;
-            return isAPITPH ? noDecimalFormatter.format(deviation) : oneDecimalFormatter.format(deviation);
+            if (value1 != null && !value1.trim().isEmpty() && 
+                value2 != null && !value2.trim().isEmpty()) {
+                double v1 = parseNumber(value1);
+                double v2 = parseNumber(value2);
+                double deviation = v2 - v1;
+                return isAPITPH ? noDecimalFormatter.format(deviation) : oneDecimalFormatter.format(deviation);
+            }
         } catch (Exception e) {
-            return "";
         }
+        return "";
     }
     
     private static String centerAlignValue(String value) {
@@ -93,7 +96,10 @@ public class CSVMerger {
     }
     
     public static void mergeCSVFiles(String file1Path, String file2Path, String outputPath) {
-        // [Previous code remains the same until the data writing part]
+        Map<String, String[]> file2Data = new HashMap<>();
+        String[] file2Headers = null;
+        String[] file1Headers = null;
+        List<RowData> rowsForSorting = new ArrayList<>();
         
         try {
             // First pass through file2 to get headers and data
@@ -141,9 +147,6 @@ public class CSVMerger {
             
             // Write output
             try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
-                // Write headers (same as before)
-                // [Header writing code remains the same]
-                
                 // Write Row 1 headers
                 bw.write(file1Headers[0]); // API Name
                 bw.write(COMMA_DELIMITER + "=\"" + file1Headers[1] + "\""); // API_TPH
@@ -170,7 +173,7 @@ public class CSVMerger {
                 bw.write(COMMA_DELIMITER + centerAlignValue("Δ"));
                 bw.write(NEW_LINE);
                 
-                // Write data rows with proper number formatting
+                // Write data rows
                 for (RowData row : rowsForSorting) {
                     bw.write(row.apiName);
                     

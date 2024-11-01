@@ -1,0 +1,102 @@
+import java.io.*;
+import java.util.*;
+
+public class CSVMerger {
+    private static final String COMMA_DELIMITER = ",";
+    private static final String NEW_LINE = "\n";
+    
+    public static void mergeCSVFiles(String file1Path, String file2Path, String outputPath) {
+        Map<String, String[]> file2Data = new HashMap<>();
+        List<String[]> file1Data = new ArrayList<>();
+        Set<String> headers = new LinkedHashSet<>();
+        
+        try {
+            // Read second file into memory for lookup
+            try (BufferedReader br = new BufferedReader(new FileReader(file2Path))) {
+                String line;
+                boolean isHeader = true;
+                String[] headerRow = null;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    
+                    if (isHeader) {
+                        headerRow = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    if (values.length >= 6) {
+                        String[] relevantColumns = Arrays.copyOfRange(values, 1, 6);
+                        file2Data.put(values[0], relevantColumns);
+                    }
+                }
+            }
+            
+            // Process first file and create output
+            try (BufferedReader br = new BufferedReader(new FileReader(file1Path));
+                 BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
+                
+                String line;
+                boolean isFirstRow = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    
+                    if (isFirstRow) {
+                        // Write original header row (Row 1)
+                        bw.write(line);
+                        bw.write(COMMA_DELIMITER);
+                        bw.write("B_file2,C_file2,D_file2,E_file2,F_file2");
+                        bw.write(NEW_LINE);
+                        
+                        // Write merged cell description row (Row 2)
+                        bw.write("API Name,");  // Column A
+                        bw.write("\"Values from Sheet 1\",,,,");  // Merged B-F for Sheet 1
+                        bw.write(",");  // Column G
+                        bw.write("\"Values from Sheet 2\",,,,");  // Merged cells for Sheet 2
+                        bw.write(NEW_LINE);
+                        
+                        isFirstRow = false;
+                        continue;
+                    }
+                    
+                    // Write data rows starting from row 3
+                    bw.write(line);
+                    
+                    // Look up and write matching data from file2
+                    String apiName = values[0];
+                    String[] matchingData = file2Data.get(apiName);
+                    
+                    if (matchingData != null) {
+                        for (String value : matchingData) {
+                            bw.write(COMMA_DELIMITER);
+                            bw.write(value != null ? value : "");
+                        }
+                    } else {
+                        // Write empty columns if no match found
+                        bw.write(COMMA_DELIMITER + ",,,,,");
+                    }
+                    
+                    bw.write(NEW_LINE);
+                }
+            }
+            
+            System.out.println("CSV files merged successfully!");
+            System.out.println("Total records in lookup table (File 2): " + file2Data.size());
+            
+        } catch (IOException e) {
+            System.err.println("Error processing CSV files: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    public static void main(String[] args) {
+        // Example usage
+        String file1Path = "first_file.csv";
+        String file2Path = "second_file.csv";
+        String outputPath = "merged_output.csv";
+        
+        mergeCSVFiles(file1Path, file2Path, outputPath);
+    }
+}

@@ -1,0 +1,183 @@
+import java.io.*;
+import java.util.*;
+
+public class CSVMerger {
+    private static final String COMMA_DELIMITER = ",";
+    private static final String NEW_LINE = "\n";
+    
+    // Constants for Excel formulas
+    private static final String CENTER_ALIGN_PREFIX = "=\"";
+    private static final String CENTER_ALIGN_SUFFIX = "\"";
+    
+    private static class RowData implements Comparable<RowData> {
+        String apiName;
+        String[] sheet1Values;
+        String[] sheet2Values;
+        double apiTph;
+        
+        public RowData(String apiName, String[] sheet1Values, String[] sheet2Values) {
+            this.apiName = apiName;
+            this.sheet1Values = sheet1Values;
+            this.sheet2Values = sheet2Values;
+            try {
+                this.apiTph = Double.parseDouble(sheet1Values[0]);
+            } catch (NumberFormatException e) {
+                this.apiTph = -1;
+            }
+        }
+        
+        @Override
+        public int compareTo(RowData other) {
+            return Double.compare(other.apiTph, this.apiTph);
+        }
+    }
+    
+    private static String formatToOneDecimal(String value) {
+        try {
+            if (value != null && !value.trim().isEmpty()) {
+                double number = Double.parseDouble(value.trim());
+                return String.format("%.1f", number);
+            }
+        } catch (NumberFormatException e) {
+            return value;
+        }
+        return "";
+    }
+    
+    private static String calculateDeviation(String value1, String value2) {
+        try {
+            if (value1 != null && !value1.trim().isEmpty() && 
+                value2 != null && !value2.trim().isEmpty()) {
+                double v1 = Double.parseDouble(value1.trim());
+                double v2 = Double.parseDouble(value2.trim());
+                double deviation = v2 - v1;
+                return String.format("%.1f", deviation);
+            }
+        } catch (NumberFormatException e) {
+        }
+        return "";
+    }
+    
+    // Helper method to center-align numeric values
+    private static String centerAlignValue(String value) {
+        return CENTER_ALIGN_PREFIX + value + CENTER_ALIGN_SUFFIX;
+    }
+    
+    public static void mergeCSVFiles(String file1Path, String file2Path, String outputPath) {
+        Map<String, String[]> file2Data = new HashMap<>();
+        String[] file2Headers = null;
+        String[] file1Headers = null;
+        List<RowData> rowsForSorting = new ArrayList<>();
+        
+        try {
+            // Read file2 data
+            try (BufferedReader br = new BufferedReader(new FileReader(file2Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    
+                    if (isHeader) {
+                        file2Headers = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    String[] selectedColumns = new String[]{values[1], values[4], values[5]};
+                    file2Data.put(values[0], selectedColumns);
+                }
+            }
+            
+            // Read and sort file1 data
+            try (BufferedReader br = new BufferedReader(new FileReader(file1Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    if (isHeader) {
+                        file1Headers = line.split(COMMA_DELIMITER, -1);
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    String apiName = values[0];
+                    String[] sheet1Values = new String[]{values[1], values[4], values[5]};
+                    String[] sheet2Values = file2Data.get(apiName);
+                    
+                    rowsForSorting.add(new RowData(apiName, sheet1Values, 
+                        sheet2Values != null ? sheet2Values : new String[]{"", "", ""}));
+                }
+            }
+            
+            Collections.sort(rowsForSorting);
+            
+            // Write output with center alignment
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
+                // Write Row 1 headers
+                bw.write(file1Headers[0]); // API Name (left-aligned)
+                bw.write(COMMA_DELIMITER + "=\"" + file1Headers[1] + "\""); // API_TPH
+                bw.write(COMMA_DELIMITER + "=\"\"");
+                bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                bw.write(COMMA_DELIMITER + "=\"" + file1Headers[4] + "\""); // 90th Percentile
+                bw.write(COMMA_DELIMITER + "=\"\"");
+                bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                bw.write(COMMA_DELIMITER + "=\"" + file1Headers[5] + "\""); // 95th Percentile
+                bw.write(COMMA_DELIMITER + "=\"\"");
+                bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                bw.write(NEW_LINE);
+                
+                // Write Row 2 with center-aligned headers
+                bw.write("API Names"); // Left-aligned
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 1"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 2"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Δ"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 1"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 2"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Δ"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 1"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 2"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Δ"));
+                bw.write(NEW_LINE);
+                
+                // Write data rows with center alignment for numeric values
+                for (RowData row : rowsForSorting) {
+                    bw.write(row.apiName); // Left-aligned
+                    
+                    // API_TPH columns (center-aligned)
+                    bw.write(COMMA_DELIMITER + centerAlignValue(row.sheet1Values[0]));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(row.sheet2Values[0]));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[0], row.sheet2Values[0])));
+                    
+                    // 90th Percentile columns (center-aligned with one decimal)
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet1Values[1])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet2Values[1])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[1], row.sheet2Values[1])));
+                    
+                    // 95th Percentile columns (center-aligned with one decimal)
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet1Values[2])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet2Values[2])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[2], row.sheet2Values[2])));
+                    
+                    bw.write(NEW_LINE);
+                }
+            }
+            
+            System.out.println("CSV files merged successfully!");
+            System.out.println("Total records sorted: " + rowsForSorting.size());
+            
+        } catch (IOException e) {
+            System.err.println("Error processing CSV files: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String file1Path = "first_file.csv";
+        String file2Path = "second_file.csv";
+        String outputPath = "merged_output.csv";
+        
+        mergeCSVFiles(file1Path, file2Path, outputPath);
+    }
+}

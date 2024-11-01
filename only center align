@@ -1,0 +1,26 @@
+private static String centerAlignValue(String value) {
+    // Just wrap the value in ="value" format for Excel center alignment
+    return "=\"" + value + "\"";
+}
+And then in the writer part:
+javaCopy// Write data rows
+for (RowData row : rowsForSorting) {
+    bw.write(row.apiName);
+    
+    // API_TPH columns (no decimals)
+    bw.write(COMMA_DELIMITER + centerAlignValue(formatAPITPH(row.sheet1Values[0])));
+    bw.write(COMMA_DELIMITER + centerAlignValue(formatAPITPH(row.sheet2Values[0])));
+    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[0], row.sheet2Values[0], true)));
+    
+    // 90th Percentile columns (one decimal)
+    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet1Values[1])));
+    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet2Values[1])));
+    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[1], row.sheet2Values[1], false)));
+    
+    // 95th Percentile columns (one decimal)
+    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet1Values[2])));
+    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet2Values[2])));
+    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[2], row.sheet2Values[2], false)));
+    
+    bw.write(NEW_LINE);
+}

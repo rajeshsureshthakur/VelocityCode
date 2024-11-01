@@ -1,0 +1,112 @@
+import java.io.*;
+import java.util.*;
+
+public class CSVMerger {
+    private static final String COMMA_DELIMITER = ",";
+    private static final String NEW_LINE = "\n";
+    
+    public static void mergeCSVFiles(String file1Path, String file2Path, String outputPath) {
+        Map<String, String[]> file2Data = new HashMap<>();
+        String[] file2Headers = null;
+        String[] file1Headers = null;
+        
+        try {
+            // First pass through file2 to get headers and data
+            try (BufferedReader br = new BufferedReader(new FileReader(file2Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    
+                    if (isHeader) {
+                        file2Headers = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    // Store B, E, F columns (indexes 1, 4, 5)
+                    String[] selectedColumns = new String[]{values[1], values[4], values[5]};
+                    file2Data.put(values[0], selectedColumns);
+                }
+            }
+            
+            // Create Excel output with side-by-side columns
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
+                // Write the BOM character for Excel to properly recognize UTF-8
+                bw.write('\ufeff');
+                
+                // Process first file
+                try (BufferedReader br = new BufferedReader(new FileReader(file1Path))) {
+                    String line;
+                    boolean isFirstRow = true;
+                    
+                    while ((line = br.readLine()) != null) {
+                        String[] values = line.split(COMMA_DELIMITER, -1);
+                        
+                        if (isFirstRow) {
+                            file1Headers = values;
+                            
+                            // Write Row 1 headers with merged cells
+                            bw.write(values[0]); // API Name
+                            // Write merged B header
+                            bw.write(COMMA_DELIMITER + "=\"" + values[1] + "\""); // B header
+                            bw.write(COMMA_DELIMITER + "=\"\""); // Empty for merged cell
+                            // Write merged E header
+                            bw.write(COMMA_DELIMITER + "=\"" + values[4] + "\""); // E header
+                            bw.write(COMMA_DELIMITER + "=\"\""); // Empty for merged cell
+                            // Write merged F header
+                            bw.write(COMMA_DELIMITER + "=\"" + values[5] + "\""); // F header
+                            bw.write(COMMA_DELIMITER + "=\"\""); // Empty for merged cell
+                            bw.write(NEW_LINE);
+                            
+                            // Write Row 2 with sheet indicators
+                            bw.write("API Names"); // A column
+                            // Values for each column pair
+                            bw.write(COMMA_DELIMITER + "Sheet 1" + COMMA_DELIMITER + "Sheet 2");  // For B columns
+                            bw.write(COMMA_DELIMITER + "Sheet 1" + COMMA_DELIMITER + "Sheet 2");  // For E columns
+                            bw.write(COMMA_DELIMITER + "Sheet 1" + COMMA_DELIMITER + "Sheet 2");  // For F columns
+                            bw.write(NEW_LINE);
+                            
+                            isFirstRow = false;
+                            continue;
+                        }
+                        
+                        // Write data rows
+                        bw.write(values[0]); // API Name
+                        
+                        // Write B columns
+                        bw.write(COMMA_DELIMITER + values[1]); // B from sheet1
+                        String[] matchingData = file2Data.get(values[0]);
+                        bw.write(COMMA_DELIMITER + (matchingData != null ? matchingData[0] : "")); // B from sheet2
+                        
+                        // Write E columns
+                        bw.write(COMMA_DELIMITER + values[4]); // E from sheet1
+                        bw.write(COMMA_DELIMITER + (matchingData != null ? matchingData[1] : "")); // E from sheet2
+                        
+                        // Write F columns
+                        bw.write(COMMA_DELIMITER + values[5]); // F from sheet1
+                        bw.write(COMMA_DELIMITER + (matchingData != null ? matchingData[2] : "")); // F from sheet2
+                        
+                        bw.write(NEW_LINE);
+                    }
+                }
+            }
+            
+            System.out.println("CSV files merged successfully!");
+            System.out.println("Total records in lookup table (File 2): " + file2Data.size());
+            
+        } catch (IOException e) {
+            System.err.println("Error processing CSV files: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String file1Path = "first_file.csv";
+        String file2Path = "second_file.csv";
+        String outputPath = "merged_output.csv";
+        
+        mergeCSVFiles(file1Path, file2Path, outputPath);
+    }
+}

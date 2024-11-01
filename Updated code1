@@ -1,0 +1,122 @@
+import java.io.*;
+import java.util.*;
+
+public class CSVMerger {
+    private static final String COMMA_DELIMITER = ",";
+    private static final String NEW_LINE = "\n";
+    // Define columns to include (0-based index)
+    private static final int[] COLUMNS_TO_INCLUDE_FILE1 = {0, 1, 4, 5}; // A, B, E, F
+    private static final int[] COLUMNS_TO_INCLUDE_FILE2 = {1, 4, 5};    // B, E, F (A is used for matching)
+    
+    public static void mergeCSVFiles(String file1Path, String file2Path, String outputPath) {
+        Map<String, String[]> file2Data = new HashMap<>();
+        String[] file2Headers = null;
+        
+        try {
+            // First pass through file2 to get headers and data
+            try (BufferedReader br = new BufferedReader(new FileReader(file2Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    
+                    if (isHeader) {
+                        file2Headers = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    // Store only the required columns from file2
+                    String[] selectedColumns = new String[COLUMNS_TO_INCLUDE_FILE2.length];
+                    for (int i = 0; i < COLUMNS_TO_INCLUDE_FILE2.length; i++) {
+                        selectedColumns[i] = values[COLUMNS_TO_INCLUDE_FILE2[i]];
+                    }
+                    file2Data.put(values[0], selectedColumns);
+                }
+            }
+            
+            // Create Excel output with merged cells
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
+                // Write the BOM character for Excel to properly recognize UTF-8
+                bw.write('\ufeff');
+                
+                // Read and process first file
+                try (BufferedReader br = new BufferedReader(new FileReader(file1Path))) {
+                    String line;
+                    boolean isFirstRow = true;
+                    
+                    while ((line = br.readLine()) != null) {
+                        String[] values = line.split(COMMA_DELIMITER, -1);
+                        
+                        if (isFirstRow) {
+                            // Write selected column headers from file1
+                            bw.write(values[0]); // Write A column header
+                            for (int i = 1; i < COLUMNS_TO_INCLUDE_FILE1.length; i++) {
+                                bw.write(COMMA_DELIMITER + values[COLUMNS_TO_INCLUDE_FILE1[i]]);
+                            }
+                            
+                            // Add selected headers from file2
+                            for (int colIndex : COLUMNS_TO_INCLUDE_FILE2) {
+                                bw.write(COMMA_DELIMITER + file2Headers[colIndex]);
+                            }
+                            bw.write(NEW_LINE);
+                            
+                            // Write description row with merged cells (Row 2)
+                            bw.write("=\"API Names\"");  // Column A
+                            bw.write(COMMA_DELIMITER + "=\"Sheet 1 Values\"");  // Start of merged region
+                            bw.write(COMMA_DELIMITER + "=\"\"");  // Empty for merged
+                            bw.write(COMMA_DELIMITER + "=\"\"");  // Empty for merged
+                            bw.write(COMMA_DELIMITER + "=\"Sheet 2 Values\"");  // Start of second merged region
+                            bw.write(COMMA_DELIMITER + "=\"\"");  // Empty for merged
+                            bw.write(COMMA_DELIMITER + "=\"\"");  // Empty for merged
+                            bw.write(NEW_LINE);
+                            
+                            isFirstRow = false;
+                            continue;
+                        }
+                        
+                        // Write selected data columns from file1
+                        bw.write(values[0]); // Write A column
+                        for (int i = 1; i < COLUMNS_TO_INCLUDE_FILE1.length; i++) {
+                            bw.write(COMMA_DELIMITER + values[COLUMNS_TO_INCLUDE_FILE1[i]]);
+                        }
+                        
+                        // Look up and write matching data from file2
+                        String apiName = values[0];
+                        String[] matchingData = file2Data.get(apiName);
+                        
+                        if (matchingData != null) {
+                            for (String value : matchingData) {
+                                bw.write(COMMA_DELIMITER);
+                                bw.write(value != null ? value : "");
+                            }
+                        } else {
+                            // Write empty columns for the selected fields from file2
+                            for (int i = 0; i < COLUMNS_TO_INCLUDE_FILE2.length; i++) {
+                                bw.write(COMMA_DELIMITER + "");
+                            }
+                        }
+                        
+                        bw.write(NEW_LINE);
+                    }
+                }
+            }
+            
+            System.out.println("CSV files merged successfully!");
+            System.out.println("Total records in lookup table (File 2): " + file2Data.size());
+            
+        } catch (IOException e) {
+            System.err.println("Error processing CSV files: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String file1Path = "first_file.csv";
+        String file2Path = "second_file.csv";
+        String outputPath = "merged_output.csv";
+        
+        mergeCSVFiles(file1Path, file2Path, outputPath);
+    }
+}

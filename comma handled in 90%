@@ -1,0 +1,212 @@
+import java.io.*;
+import java.util.*;
+import java.text.NumberFormat;
+import java.text.ParseException;
+import java.text.DecimalFormat;
+import java.util.Locale;
+
+public class CSVMerger {
+    private static final String COMMA_DELIMITER = ",";
+    private static final String NEW_LINE = "\n";
+    private static final String CENTER_ALIGN_PREFIX = "=\"";
+    private static final String CENTER_ALIGN_SUFFIX = "\"";
+    
+    // Number formatters
+    private static final NumberFormat numberParser = NumberFormat.getInstance(Locale.US);
+    private static final DecimalFormat noDecimalFormatter = new DecimalFormat("#,###");
+    private static final DecimalFormat oneDecimalFormatter = new DecimalFormat("#,##0.0");
+    
+    private static class RowData implements Comparable<RowData> {
+        String apiName;
+        String[] sheet1Values;
+        String[] sheet2Values;
+        double apiTph;
+        
+        public RowData(String apiName, String[] sheet1Values, String[] sheet2Values) {
+            this.apiName = apiName;
+            this.sheet1Values = sheet1Values;
+            this.sheet2Values = sheet2Values;
+            try {
+                this.apiTph = parseNumber(sheet1Values[0]);
+            } catch (Exception e) {
+                this.apiTph = -1;
+            }
+        }
+        
+        @Override
+        public int compareTo(RowData other) {
+            return Double.compare(other.apiTph, this.apiTph);
+        }
+    }
+    
+    // Parse number string that might contain commas
+    private static double parseNumber(String value) {
+        try {
+            if (value != null && !value.trim().isEmpty()) {
+                return numberParser.parse(value.trim()).doubleValue();
+            }
+        } catch (ParseException e) {
+            // If parsing fails, try direct double parse after removing commas
+            try {
+                return Double.parseDouble(value.trim().replace(",", ""));
+            } catch (NumberFormatException ex) {
+                return 0.0;
+            }
+        }
+        return 0.0;
+    }
+    
+    // Format API_TPH values (no decimals)
+    private static String formatAPITPH(String value) {
+        try {
+            double number = parseNumber(value);
+            return noDecimalFormatter.format(number);
+        } catch (Exception e) {
+            return value;
+        }
+    }
+    
+    // Format other numeric values (one decimal)
+    private static String formatToOneDecimal(String value) {
+        try {
+            double number = parseNumber(value);
+            return oneDecimalFormatter.format(number);
+        } catch (Exception e) {
+            return value;
+        }
+    }
+    
+    // Calculate deviation based on column type
+    private static String calculateDeviation(String value1, String value2, boolean isAPITPH) {
+        try {
+            double v1 = parseNumber(value1);
+            double v2 = parseNumber(value2);
+            double deviation = v2 - v1;
+            return isAPITPH ? noDecimalFormatter.format(deviation) : oneDecimalFormatter.format(deviation);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+    
+    private static String centerAlignValue(String value) {
+        return CENTER_ALIGN_PREFIX + value + CENTER_ALIGN_SUFFIX;
+    }
+    
+    public static void mergeCSVFiles(String file1Path, String file2Path, String outputPath) {
+        // [Previous code remains the same until the data writing part]
+        
+        try {
+            // First pass through file2 to get headers and data
+            try (BufferedReader br = new BufferedReader(new FileReader(file2Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    
+                    if (isHeader) {
+                        file2Headers = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    String[] selectedColumns = new String[]{values[1], values[4], values[5]};
+                    file2Data.put(values[0], selectedColumns);
+                }
+            }
+            
+            // Read file1 data for sorting
+            try (BufferedReader br = new BufferedReader(new FileReader(file1Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    if (isHeader) {
+                        file1Headers = line.split(COMMA_DELIMITER, -1);
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    String apiName = values[0];
+                    String[] sheet1Values = new String[]{values[1], values[4], values[5]};
+                    String[] sheet2Values = file2Data.get(apiName);
+                    
+                    rowsForSorting.add(new RowData(apiName, sheet1Values, 
+                        sheet2Values != null ? sheet2Values : new String[]{"", "", ""}));
+                }
+            }
+            
+            Collections.sort(rowsForSorting);
+            
+            // Write output
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
+                // Write headers (same as before)
+                // [Header writing code remains the same]
+                
+                // Write Row 1 headers
+                bw.write(file1Headers[0]); // API Name
+                bw.write(COMMA_DELIMITER + "=\"" + file1Headers[1] + "\""); // API_TPH
+                bw.write(COMMA_DELIMITER + "=\"\"");
+                bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                bw.write(COMMA_DELIMITER + "=\"" + file1Headers[4] + "\""); // 90th Percentile
+                bw.write(COMMA_DELIMITER + "=\"\"");
+                bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                bw.write(COMMA_DELIMITER + "=\"" + file1Headers[5] + "\""); // 95th Percentile
+                bw.write(COMMA_DELIMITER + "=\"\"");
+                bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                bw.write(NEW_LINE);
+                
+                // Write Row 2
+                bw.write("API Names");
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 1"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 2"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Δ"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 1"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 2"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Δ"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 1"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Sheet 2"));
+                bw.write(COMMA_DELIMITER + centerAlignValue("Δ"));
+                bw.write(NEW_LINE);
+                
+                // Write data rows with proper number formatting
+                for (RowData row : rowsForSorting) {
+                    bw.write(row.apiName);
+                    
+                    // API_TPH columns (no decimals)
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatAPITPH(row.sheet1Values[0])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatAPITPH(row.sheet2Values[0])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[0], row.sheet2Values[0], true)));
+                    
+                    // 90th Percentile columns (one decimal)
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet1Values[1])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet2Values[1])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[1], row.sheet2Values[1], false)));
+                    
+                    // 95th Percentile columns (one decimal)
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet1Values[2])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(formatToOneDecimal(row.sheet2Values[2])));
+                    bw.write(COMMA_DELIMITER + centerAlignValue(calculateDeviation(row.sheet1Values[2], row.sheet2Values[2], false)));
+                    
+                    bw.write(NEW_LINE);
+                }
+            }
+            
+            System.out.println("CSV files merged successfully!");
+            System.out.println("Total records sorted: " + rowsForSorting.size());
+            
+        } catch (IOException e) {
+            System.err.println("Error processing CSV files: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String file1Path = "first_file.csv";
+        String file2Path = "second_file.csv";
+        String outputPath = "merged_output.csv";
+        
+        mergeCSVFiles(file1Path, file2Path, outputPath);
+    }
+}

@@ -1,0 +1,137 @@
+import java.io.*;
+import java.util.*;
+
+public class CSVMerger {
+    private static final String COMMA_DELIMITER = ",";
+    private static final String NEW_LINE = "\n";
+    
+    // Helper method to calculate deviation
+    private static String calculateDeviation(String value1, String value2) {
+        try {
+            if (value1 != null && !value1.trim().isEmpty() && 
+                value2 != null && !value2.trim().isEmpty()) {
+                double v1 = Double.parseDouble(value1.trim());
+                double v2 = Double.parseDouble(value2.trim());
+                double deviation = v2 - v1;  // Sheet2 - Sheet1
+                return String.format("%.2f", deviation);
+            }
+        } catch (NumberFormatException e) {
+            // Return empty string if values cannot be parsed
+        }
+        return "";
+    }
+    
+    public static void mergeCSVFiles(String file1Path, String file2Path, String outputPath) {
+        Map<String, String[]> file2Data = new HashMap<>();
+        String[] file2Headers = null;
+        String[] file1Headers = null;
+        
+        try {
+            // First pass through file2 to get headers and data
+            try (BufferedReader br = new BufferedReader(new FileReader(file2Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = line.split(COMMA_DELIMITER, -1);
+                    
+                    if (isHeader) {
+                        file2Headers = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    // Store B, E, F columns (indexes 1, 4, 5)
+                    String[] selectedColumns = new String[]{values[1], values[4], values[5]};
+                    file2Data.put(values[0], selectedColumns);
+                }
+            }
+            
+            // Create Excel output with side-by-side columns and deviations
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
+                // Write the BOM character for Excel
+                bw.write('\ufeff');
+                
+                // Process first file
+                try (BufferedReader br = new BufferedReader(new FileReader(file1Path))) {
+                    String line;
+                    boolean isFirstRow = true;
+                    
+                    while ((line = br.readLine()) != null) {
+                        String[] values = line.split(COMMA_DELIMITER, -1);
+                        
+                        if (isFirstRow) {
+                            file1Headers = values;
+                            
+                            // Write Row 1 headers with merged cells
+                            bw.write(values[0]); // API Name
+                            // Write merged B header (API_TPH)
+                            bw.write(COMMA_DELIMITER + "=\"" + values[1] + "\""); 
+                            bw.write(COMMA_DELIMITER + "=\"\""); 
+                            bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                            // Write merged E header (90th Percentile)
+                            bw.write(COMMA_DELIMITER + "=\"" + values[4] + "\"");
+                            bw.write(COMMA_DELIMITER + "=\"\"");
+                            bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                            // Write merged F header (95th Percentile)
+                            bw.write(COMMA_DELIMITER + "=\"" + values[5] + "\"");
+                            bw.write(COMMA_DELIMITER + "=\"\"");
+                            bw.write(COMMA_DELIMITER + "=\"Deviation\"");
+                            bw.write(NEW_LINE);
+                            
+                            // Write Row 2 with sheet indicators
+                            bw.write("API Names"); // A column
+                            // Values for each group
+                            bw.write(COMMA_DELIMITER + "Sheet 1" + COMMA_DELIMITER + "Sheet 2" + COMMA_DELIMITER + "Δ");  // For API_TPH
+                            bw.write(COMMA_DELIMITER + "Sheet 1" + COMMA_DELIMITER + "Sheet 2" + COMMA_DELIMITER + "Δ");  // For 90th Percentile
+                            bw.write(COMMA_DELIMITER + "Sheet 1" + COMMA_DELIMITER + "Sheet 2" + COMMA_DELIMITER + "Δ");  // For 95th Percentile
+                            bw.write(NEW_LINE);
+                            
+                            isFirstRow = false;
+                            continue;
+                        }
+                        
+                        // Write data rows
+                        bw.write(values[0]); // API Name
+                        String[] matchingData = file2Data.get(values[0]);
+                        
+                        // Write API_TPH columns and deviation
+                        bw.write(COMMA_DELIMITER + values[1]); // Sheet1 value
+                        String sheet2Value = matchingData != null ? matchingData[0] : "";
+                        bw.write(COMMA_DELIMITER + sheet2Value); // Sheet2 value
+                        bw.write(COMMA_DELIMITER + calculateDeviation(values[1], sheet2Value)); // Deviation
+                        
+                        // Write 90th Percentile columns and deviation
+                        bw.write(COMMA_DELIMITER + values[4]); // Sheet1 value
+                        sheet2Value = matchingData != null ? matchingData[1] : "";
+                        bw.write(COMMA_DELIMITER + sheet2Value); // Sheet2 value
+                        bw.write(COMMA_DELIMITER + calculateDeviation(values[4], sheet2Value)); // Deviation
+                        
+                        // Write 95th Percentile columns and deviation
+                        bw.write(COMMA_DELIMITER + values[5]); // Sheet1 value
+                        sheet2Value = matchingData != null ? matchingData[2] : "";
+                        bw.write(COMMA_DELIMITER + sheet2Value); // Sheet2 value
+                        bw.write(COMMA_DELIMITER + calculateDeviation(values[5], sheet2Value)); // Deviation
+                        
+                        bw.write(NEW_LINE);
+                    }
+                }
+            }
+            
+            System.out.println("CSV files merged successfully!");
+            System.out.println("Total records in lookup table (File 2): " + file2Data.size());
+            
+        } catch (IOException e) {
+            System.err.println("Error processing CSV files: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String file1Path = "first_file.csv";
+        String file2Path = "second_file.csv";
+        String outputPath = "merged_output.csv";
+        
+        mergeCSVFiles(file1Path, file2Path, outputPath);
+    }
+}

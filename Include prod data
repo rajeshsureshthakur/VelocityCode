@@ -1,0 +1,262 @@
+import java.io.*;
+import java.util.*;
+import java.text.NumberFormat;
+import java.text.ParseException;
+import java.text.DecimalFormat;
+import java.util.Locale;
+
+public class CSVMerger {
+    private static final String COMMA_DELIMITER = ",";
+    private static final String NEW_LINE = "\n";
+    private static final NumberFormat numberParser = NumberFormat.getInstance(Locale.US);
+    
+    private static class RowData implements Comparable<RowData> {
+        String apiName;
+        String artName;
+        String[] sheet1Values;
+        String[] sheet2Values;
+        String sheet3Tph;
+        double apiTph;
+        
+        public RowData(String apiName, String artName, String[] sheet1Values, String[] sheet2Values, String sheet3Tph) {
+            this.apiName = apiName;
+            this.artName = artName;
+            this.sheet1Values = sheet1Values;
+            this.sheet2Values = sheet2Values;
+            this.sheet3Tph = sheet3Tph;
+            try {
+                this.apiTph = parseNumber(sheet1Values[0]);
+            } catch (Exception e) {
+                this.apiTph = -1;
+            }
+        }
+        
+        @Override
+        public int compareTo(RowData other) {
+            return Double.compare(other.apiTph, this.apiTph);
+        }
+    }
+    
+    private static double parseNumber(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return 0.0;
+        }
+        try {
+            String cleanValue = value.trim().replace("\"", "");
+            return numberParser.parse(cleanValue).doubleValue();
+        } catch (ParseException e) {
+            try {
+                return Double.parseDouble(value.trim().replace("\"", "").replace(",", ""));
+            } catch (NumberFormatException ex) {
+                return 0.0;
+            }
+        }
+    }
+    
+    private static String formatAPITPH(String value) {
+        try {
+            return String.format("%d", Math.round(parseNumber(value)));
+        } catch (Exception e) {
+            return "0";
+        }
+    }
+    
+    private static String formatToOneDecimal(String value) {
+        try {
+            return String.format("%.1f", parseNumber(value));
+        } catch (Exception e) {
+            return "0.0";
+        }
+    }
+    
+    private static String calculateDeviation(String value1, String value2, boolean isAPITPH) {
+        try {
+            double v1 = parseNumber(value1);
+            double v2 = parseNumber(value2);
+            double deviation = v2 - v1;
+            return isAPITPH ? String.format("%d", Math.round(deviation)) 
+                          : String.format("%.1f", deviation);
+        } catch (Exception e) {
+            return isAPITPH ? "0" : "0.0";
+        }
+    }
+    
+    private static String[] parseCSVLine(String line) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        
+        for (char c : line.toCharArray()) {
+            if (c == '\"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                tokens.add(sb.toString().trim());
+                sb.setLength(0);
+            } else {
+                sb.append(c);
+            }
+        }
+        tokens.add(sb.toString().trim());
+        
+        return tokens.toArray(new String[0]);
+    }
+    
+    public static void mergeCSVFiles(String file1Path, String file2Path, String artFilePath, String file3Path, String outputPath) {
+        Map<String, String[]> file2Data = new HashMap<>();
+        Map<String, String> artNameMap = new HashMap<>();
+        Map<String, String> file3TphMap = new HashMap<>();
+        String[] file2Headers = null;
+        String[] file1Headers = null;
+        List<RowData> rowsForSorting = new ArrayList<>();
+        
+        try {
+            // Read third file for API_TPH
+            try (BufferedReader br = new BufferedReader(new FileReader(file3Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    if (isHeader) {
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    String[] values = parseCSVLine(line);
+                    if (values.length >= 2) {
+                        file3TphMap.put(values[0].trim(), values[1].trim());
+                    }
+                }
+            }
+            
+            // Read ART names file
+            try (BufferedReader br = new BufferedReader(new FileReader(artFilePath))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    if (isHeader) {
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    String[] values = parseCSVLine(line);
+                    if (values.length >= 2) {
+                        artNameMap.put(values[0].trim(), values[1].trim());
+                    }
+                }
+            }
+            
+            // Read file2 data
+            try (BufferedReader br = new BufferedReader(new FileReader(file2Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = parseCSVLine(line);
+                    
+                    if (isHeader) {
+                        file2Headers = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    if (values.length >= 6) {
+                        String[] selectedColumns = new String[]{values[1], values[4], values[5]};
+                        file2Data.put(values[0].trim(), selectedColumns);
+                    }
+                }
+            }
+            
+            // Read file1 data
+            try (BufferedReader br = new BufferedReader(new FileReader(file1Path))) {
+                String line;
+                boolean isHeader = true;
+                
+                while ((line = br.readLine()) != null) {
+                    String[] values = parseCSVLine(line);
+                    
+                    if (isHeader) {
+                        file1Headers = values;
+                        isHeader = false;
+                        continue;
+                    }
+                    
+                    if (values.length >= 6) {
+                        String apiName = values[0].trim();
+                        String artName = artNameMap.getOrDefault(apiName, "-");
+                        String sheet3Tph = file3TphMap.getOrDefault(apiName, "0");
+                        String[] sheet1Values = new String[]{values[1], values[4], values[5]};
+                        String[] sheet2Values = file2Data.get(apiName);
+                        
+                        rowsForSorting.add(new RowData(apiName, artName, sheet1Values, 
+                            sheet2Values != null ? sheet2Values : new String[]{"0", "0", "0"},
+                            sheet3Tph));
+                    }
+                }
+            }
+            
+            Collections.sort(rowsForSorting);
+            
+            // Write output
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputPath))) {
+                // Write headers
+                bw.write("ART Name");
+                bw.write(COMMA_DELIMITER + "API Name");
+                bw.write(COMMA_DELIMITER + "Sheet 3 " + file1Headers[1]); // API_TPH from sheet 3
+                bw.write(COMMA_DELIMITER + file1Headers[1]); // API_TPH
+                bw.write(COMMA_DELIMITER + "Sheet 2");
+                bw.write(COMMA_DELIMITER + "Deviation");
+                bw.write(COMMA_DELIMITER + file1Headers[4]); // 90th Percentile
+                bw.write(COMMA_DELIMITER + "Sheet 2");
+                bw.write(COMMA_DELIMITER + "Deviation");
+                bw.write(COMMA_DELIMITER + file1Headers[5]); // 95th Percentile
+                bw.write(COMMA_DELIMITER + "Sheet 2");
+                bw.write(COMMA_DELIMITER + "Deviation");
+                bw.write(NEW_LINE);
+                
+                // Write data rows
+                for (RowData row : rowsForSorting) {
+                    bw.write(row.artName);
+                    bw.write(COMMA_DELIMITER + row.apiName);
+                    
+                    // Write Sheet 3 API_TPH
+                    bw.write(COMMA_DELIMITER + formatAPITPH(row.sheet3Tph));
+                    
+                    // API_TPH columns
+                    bw.write(COMMA_DELIMITER + formatAPITPH(row.sheet1Values[0]));
+                    bw.write(COMMA_DELIMITER + formatAPITPH(row.sheet2Values[0]));
+                    bw.write(COMMA_DELIMITER + calculateDeviation(row.sheet1Values[0], row.sheet2Values[0], true));
+                    
+                    // 90th Percentile columns
+                    bw.write(COMMA_DELIMITER + formatToOneDecimal(row.sheet1Values[1]));
+                    bw.write(COMMA_DELIMITER + formatToOneDecimal(row.sheet2Values[1]));
+                    bw.write(COMMA_DELIMITER + calculateDeviation(row.sheet1Values[1], row.sheet2Values[1], false));
+                    
+                    // 95th Percentile columns
+                    bw.write(COMMA_DELIMITER + formatToOneDecimal(row.sheet1Values[2]));
+                    bw.write(COMMA_DELIMITER + formatToOneDecimal(row.sheet2Values[2]));
+                    bw.write(COMMA_DELIMITER + calculateDeviation(row.sheet1Values[2], row.sheet2Values[2], false));
+                    
+                    bw.write(NEW_LINE);
+                }
+            }
+            
+            System.out.println("CSV files merged successfully!");
+            System.out.println("Total records sorted: " + rowsForSorting.size());
+            
+        } catch (IOException e) {
+            System.err.println("Error processing CSV files: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String file1Path = "first_file.csv";
+        String file2Path = "second_file.csv";
+        String artFilePath = "art_names.csv";
+        String file3Path = "third_file.csv";
+        String outputPath = "merged_output.csv";
+        
+        mergeCSVFiles(file1Path, file2Path, artFilePath, file3Path, outputPath);
+    }
+}
